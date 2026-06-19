@@ -40,6 +40,7 @@ export class SignalCryptoManager {
 
   public async init(): Promise<void> {
     if (this.initialized) return
+    await this.db.init()
 
     const storedKey = await this.db.loadIdentityKey()
     if (storedKey) {

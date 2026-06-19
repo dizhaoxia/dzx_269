@@ -66,10 +66,10 @@ export interface GetUserResponse {
 export const userApi = {
   search: (query: string): Promise<User[]> =>
     apiClient.get<SearchUsersResponse>('/users/search', { params: { q: query } })
-      .then((r) => r.data.users),
+      .then((r: any) => r.users),
   getById: (userId: string): Promise<User> =>
     apiClient.get<GetUserResponse>(`/users/${userId}`)
-      .then((r) => r.data.user)
+      .then((r: any) => r.user)
 }
 
 export const keyApi = {
@@ -87,7 +87,7 @@ export const keyApi = {
       }))
     }),
   getBundle: (userId: string): Promise<KeyBundle> =>
-    apiClient.get<KeyBundle>(`/keys/bundle/${userId}`).then((r) => r.data)
+    apiClient.get(`/keys/bundle/${userId}`) as Promise<KeyBundle>
 }
 
 export const messageApi = {

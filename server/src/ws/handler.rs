@@ -1,33 +1,64 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
+        State, Query
     },
     response::IntoResponse,
+    http::StatusCode,
+    Json,
 };
 use chrono::Utc;
 use futures::{stream::SplitStream, StreamExt};
+use serde::Deserialize;
 use serde_json;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::models::{ConversationType, DeliveryStatus, MessageType};
-use crate::services::auth::Claims;
+use crate::services::auth::{Claims, verify_jwt};
 use crate::services::message::{save_message, update_message_status};
 use crate::ws::connection::ConnectionManager;
 use crate::ws::message::{IncomingMessage, OutgoingMessage, WebSocketMessage};
 use std::sync::Arc;
 
+#[derive(Debug, Deserialize)]
+pub struct WsTokenQuery {
+    pub token: Option<String>,
+}
+
 pub async fn ws_handler(
     State(state): State<AppState>,
     ws: WebSocketUpgrade,
-    claims: Claims,
+    Query(query): Query<WsTokenQuery>,
 ) -> impl IntoResponse {
+    let token = match query.token {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": "Missing token query parameter" })),
+            )
+                .into_response();
+        }
+    };
+
+    let claims = match verify_jwt(&token, &state.config.jwt_secret) {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": format!("Invalid token: {}", e) })),
+            )
+                .into_response();
+        }
+    };
+
     let cm = state.connection_manager.clone();
     let user_id = claims.user_id;
 
     ws.on_upgrade(move |socket| handle_socket(socket, user_id, cm, state))
+        .into_response()
 }
 
 async fn handle_socket(socket: WebSocket, user_id: Uuid, cm: Arc<ConnectionManager>, state: AppState) {

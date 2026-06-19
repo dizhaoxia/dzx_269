@@ -22,6 +22,7 @@ const STORE_CONTACTS = 'contacts'
 export class DatabaseManager {
   private static instance: DatabaseManager
   private db: IDBDatabase | null = null
+  private initPromise: Promise<void> | null = null
 
   public static getInstance(): DatabaseManager {
     if (!DatabaseManager.instance) {
@@ -31,7 +32,22 @@ export class DatabaseManager {
   }
 
   public async init(): Promise<void> {
+    if (this.db) return
+    if (this.initPromise) return this.initPromise
+    this.initPromise = this.doInit()
+    try {
+      await this.initPromise
+    } finally {
+      this.initPromise = null
+    }
+  }
+
+  private doInit(): Promise<void> {
     return new Promise((resolve, reject) => {
+      if (this.db) {
+        resolve()
+        return
+      }
       const request = indexedDB.open(DB_NAME, DB_VERSION)
 
       request.onerror = () => reject(request.error)
