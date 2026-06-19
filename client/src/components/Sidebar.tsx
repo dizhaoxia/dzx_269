@@ -291,16 +291,16 @@ function Sidebar({
     return msgTime.format('MM/DD')
   }
 
-  const getInitial = (str?: string) => {
+  const getInitial = (str?: string | null) => {
     return str ? str.charAt(0).toUpperCase() : '?'
   }
 
   return (
     <SidebarContainer>
       <UserHeader>
-        <UserAvatar>{getInitial(currentUser.nickname)}</UserAvatar>
+        <UserAvatar>{getInitial(currentUser.nickname || currentUser.phone)}</UserAvatar>
         <UserInfo>
-          <UserName>{currentUser.nickname}</UserName>
+          <UserName>{currentUser.nickname || currentUser.phone}</UserName>
           <UserPhone>{currentUser.phone}</UserPhone>
         </UserInfo>
       </UserHeader>

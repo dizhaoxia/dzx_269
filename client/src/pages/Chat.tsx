@@ -1,6 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import styled from '@emotion/styled'
-import { v4 as uuidv4 } from 'uuid'
 import {
   Sidebar,
   MessageList,
@@ -10,7 +9,11 @@ import {
   CreateGroupModal
 } from '../components'
 import { useAuthStore } from '../store/auth'
-import type { User, Conversation, Message } from '../types'
+import { useChatStore } from '../store/chat'
+import { useChat } from '../hooks/useChat'
+import type { User, Conversation as TypeConversation, Message as TypeMessage } from '../types'
+import { userApi } from '../api'
+import { SignalCryptoManager } from '../crypto'
 
 const ChatContainer = styled.div`
   display: grid;
@@ -109,6 +112,19 @@ const ChatSubtitle = styled.span`
   color: #22c55e;
 `
 
+const EncryptedBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: #dcfce7;
+  color: #15803d;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 8px;
+`
+
 const ToggleDetailButton = styled.button`
   width: 36px;
   height: 36px;
@@ -150,329 +166,169 @@ const EmptyChatText = styled.span`
   font-size: 16px;
 `
 
-const MockUsers: User[] = [
-  {
-    id: 'user-1',
-    phone: '13800138001',
-    nickname: '张三',
-    avatar: '',
-    createdAt: '2024-01-01T00:00:00Z',
-    updatedAt: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'user-2',
-    phone: '13800138002',
-    nickname: '李四',
-    avatar: '',
-    createdAt: '2024-01-01T00:00:00Z',
-    updatedAt: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'user-3',
-    phone: '13800138003',
-    nickname: '王五',
-    avatar: '',
-    createdAt: '2024-01-01T00:00:00Z',
-    updatedAt: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'user-4',
-    phone: '13800138004',
-    nickname: '赵六',
-    avatar: '',
-    createdAt: '2024-01-01T00:00:00Z',
-    updatedAt: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'user-5',
-    phone: '13800138005',
-    nickname: '钱七',
-    avatar: '',
-    createdAt: '2024-01-01T00:00:00Z',
-    updatedAt: '2024-01-01T00:00:00Z'
-  }
-]
-
-interface ExtendedConversation extends Conversation {
+interface ExtendedConversation extends TypeConversation {
   online?: boolean
   targetUser?: User
   groupMembers?: Array<User & { role?: 'owner' | 'admin' | 'member' }>
   isEncrypted?: boolean
 }
 
-interface ExtendedMessage extends Message {
+interface ExtendedMessage extends TypeMessage {
   plaintext?: string
   sender?: User
 }
 
 function Chat() {
   const { user: currentUser } = useAuthStore()
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const {
+    conversations,
+    messages,
+    activeConversationId,
+    setActiveConversation,
+    onlineUsers,
+    typingUsers
+  } = useChatStore()
+  const {
+    sendMessage,
+    sendTyping,
+    createConversation,
+    loadConversationMessages,
+    markAsRead,
+    isConnected
+  } = useChat()
+
   const [showSearchModal, setShowSearchModal] = useState(false)
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
   const [detailCollapsed, setDetailCollapsed] = useState(false)
   const [showSidebarMobile, setShowSidebarMobile] = useState(true)
   const [showDetailMobile, setShowDetailMobile] = useState(false)
+  const [encryptedSessions, setEncryptedSessions] = useState<Set<string>>(new Set())
+  const [startingEncryption, setStartingEncryption] = useState(false)
+  const [allUsers, setAllUsers] = useState<User[]>([])
 
-  const now = Date.now()
+  const extendedConversations = useMemo<ExtendedConversation[]>(() => {
+    return Array.from(conversations.values()).map((conv) => ({
+      ...conv,
+      online: conv.type === 'direct' ? onlineUsers.has(conv.id) : undefined,
+      isEncrypted: encryptedSessions.has(conv.id)
+    }))
+  }, [conversations, onlineUsers, encryptedSessions])
 
-  const [conversations, setConversations] = useState<ExtendedConversation[]>([
-    {
-      id: 'conv-1',
-      type: 'direct',
-      lastMessage: '好的，明天见！',
-      lastMessageTime: now - 1000 * 60 * 5,
-      unreadCount: 2,
-      online: true,
-      targetUser: MockUsers[0]
-    },
-    {
-      id: 'conv-2',
-      type: 'direct',
-      lastMessage: '那个文档我发到你邮箱了',
-      lastMessageTime: now - 1000 * 60 * 60,
-      unreadCount: 0,
-      online: false,
-      targetUser: MockUsers[1]
-    },
-    {
-      id: 'conv-3',
-      type: 'group',
-      name: '项目讨论组',
-      lastMessage: '张三: 周末有时间吗？',
-      lastMessageTime: now - 1000 * 60 * 60 * 3,
-      unreadCount: 5,
-      groupMembers: [
-        { ...MockUsers[0], role: 'owner' },
-        { ...MockUsers[1], role: 'member' },
-        { ...MockUsers[2], role: 'member' }
-      ]
-    },
-    {
-      id: 'conv-4',
-      type: 'direct',
-      lastMessage: '哈哈哈笑死我了 😂',
-      lastMessageTime: now - 1000 * 60 * 60 * 24,
-      unreadCount: 0,
-      online: true,
-      targetUser: MockUsers[3]
-    }
-  ])
+  const activeConversation = useMemo(() => {
+    if (!activeConversationId) return null
+    const conv = extendedConversations.find((c) => c.id === activeConversationId) || null
+    return conv
+  }, [extendedConversations, activeConversationId])
 
-  const [messagesMap, setMessagesMap] = useState<Record<string, ExtendedMessage[]>>({
-    'conv-1': [
-      {
-        id: 'msg-1',
-        conversationId: 'conv-1',
-        senderId: MockUsers[0].id,
-        ciphertext: '',
-        messageType: 'text',
-        timestamp: now - 1000 * 60 * 30,
-        deliveryStatus: 'read',
-        plaintext: '在吗？',
-        sender: MockUsers[0]
-      },
-      {
-        id: 'msg-2',
-        conversationId: 'conv-1',
-        senderId: currentUser?.id || 'me',
-        ciphertext: '',
-        messageType: 'text',
-        timestamp: now - 1000 * 60 * 25,
-        deliveryStatus: 'read',
-        plaintext: '在的，怎么了？'
-      },
-      {
-        id: 'msg-3',
-        conversationId: 'conv-1',
-        senderId: MockUsers[0].id,
-        ciphertext: '',
-        messageType: 'text',
-        timestamp: now - 1000 * 60 * 10,
-        deliveryStatus: 'read',
-        plaintext: '明天有空一起吃饭吗？',
-        sender: MockUsers[0]
-      },
-      {
-        id: 'msg-4',
-        conversationId: 'conv-1',
-        senderId: currentUser?.id || 'me',
-        ciphertext: '',
-        messageType: 'text',
-        timestamp: now - 1000 * 60 * 6,
-        deliveryStatus: 'read',
-        plaintext: '好啊，几点？在哪里？'
-      },
-      {
-        id: 'msg-5',
-        conversationId: 'conv-1',
-        senderId: MockUsers[0].id,
-        ciphertext: '',
-        messageType: 'text',
-        timestamp: now - 1000 * 60 * 5,
-        deliveryStatus: 'delivered',
-        plaintext: '好的，明天见！',
-        sender: MockUsers[0]
-      }
-    ],
-    'conv-3': [
-      {
-        id: 'gmsg-1',
-        conversationId: 'conv-3',
-        senderId: MockUsers[1].id,
-        ciphertext: '',
-        messageType: 'text',
-        timestamp: now - 1000 * 60 * 60 * 4,
-        deliveryStatus: 'read',
-        plaintext: '大家好！',
-        sender: MockUsers[1]
-      },
-      {
-        id: 'gmsg-2',
-        conversationId: 'conv-3',
-        senderId: MockUsers[2].id,
-        ciphertext: '',
-        messageType: 'emoji',
-        timestamp: now - 1000 * 60 * 60 * 3.5,
-        deliveryStatus: 'read',
-        plaintext: '👋',
-        sender: MockUsers[2]
-      },
-      {
-        id: 'gmsg-3',
-        conversationId: 'conv-3',
-        senderId: MockUsers[0].id,
-        ciphertext: '',
-        messageType: 'text',
-        timestamp: now - 1000 * 60 * 60 * 3,
-        deliveryStatus: 'delivered',
-        plaintext: '周末有时间吗？',
-        sender: MockUsers[0]
-      }
-    ]
-  })
+  const activeMessages = useMemo<ExtendedMessage[]>(() => {
+    if (!activeConversationId) return []
+    const msgs = messages.get(activeConversationId) || []
+    return msgs.sort((a, b) => a.timestamp - b.timestamp) as ExtendedMessage[]
+  }, [messages, activeConversationId])
 
-  const [isTyping, setIsTyping] = useState(false)
+  const activeTypingUsers = useMemo(() => {
+    if (!activeConversationId) return new Set<string>()
+    return typingUsers.get(activeConversationId) || new Set()
+  }, [typingUsers, activeConversationId])
 
-  const activeConversation = useMemo(
-    () => conversations.find((c) => c.id === activeConversationId) || null,
-    [conversations, activeConversationId]
-  )
-
-  const activeMessages = useMemo(
-    () => (activeConversationId ? messagesMap[activeConversationId] || [] : []),
-    [messagesMap, activeConversationId]
-  )
-
-  const handleSelectConversation = (id: string) => {
-    setActiveConversationId(id)
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c))
-    )
+  const handleSelectConversation = useCallback(async (id: string) => {
+    setActiveConversation(id)
+    markAsRead(id)
+    await loadConversationMessages(id)
     setShowSidebarMobile(false)
     setShowDetailMobile(false)
-  }
+  }, [setActiveConversation, markAsRead, loadConversationMessages])
 
-  const handleSendMessage = (text: string, type: 'text' | 'emoji') => {
-    if (!activeConversationId || !currentUser) return
-
-    const newMessage: ExtendedMessage = {
-      id: uuidv4(),
-      conversationId: activeConversationId,
-      senderId: currentUser.id,
-      ciphertext: text,
-      messageType: type,
-      timestamp: Date.now(),
-      deliveryStatus: 'sent',
-      plaintext: text
+  const handleSendMessage = useCallback(async (text: string, type: 'text' | 'emoji') => {
+    if (!activeConversationId || !currentUser || !activeConversation) return
+    const receiverId = activeConversation.type === 'direct'
+      ? activeConversation.targetUser?.id
+      : undefined
+    if (!receiverId) return
+    try {
+      await sendMessage(activeConversationId, receiverId, text, type)
+    } catch (e) {
+      console.error('Failed to send message:', e)
     }
+  }, [activeConversationId, activeConversation, currentUser, sendMessage])
 
-    setMessagesMap((prev) => ({
-      ...prev,
-      [activeConversationId]: [...(prev[activeConversationId] || []), newMessage]
-    }))
+  const handleTyping = useCallback((isTyping: boolean) => {
+    if (!activeConversationId) return
+    sendTyping(activeConversationId, isTyping)
+  }, [activeConversationId, sendTyping])
 
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === activeConversationId
-          ? { ...c, lastMessage: text, lastMessageTime: Date.now() }
-          : c
-      )
-    )
+  const handleSelectUser = useCallback(async (user: User) => {
+    try {
+      const conv = await createConversation(user.id)
+      const targetUserConv = conv as ExtendedConversation
+      targetUserConv.targetUser = user
+      await handleSelectConversation(conv.id)
+    } catch (e) {
+      console.error('Failed to create conversation:', e)
+    }
+  }, [createConversation, handleSelectConversation])
 
-    setTimeout(() => {
-      setMessagesMap((prev) => ({
-        ...prev,
-        [activeConversationId]: (prev[activeConversationId] || []).map((m) =>
-          m.id === newMessage.id ? { ...m, deliveryStatus: 'delivered' as const } : m
-        )
-      }))
-    }, 1000)
-  }
-
-  const handleTyping = () => {
-    setIsTyping(true)
-    setTimeout(() => setIsTyping(false), 2000)
-  }
-
-  const handleSelectUser = (user: User) => {
-    let existingConv = conversations.find(
-      (c) => c.type === 'direct' && c.targetUser?.id === user.id
-    )
-
-    if (!existingConv) {
-      const newConv: ExtendedConversation = {
-        id: uuidv4(),
-        type: 'direct',
-        unreadCount: 0,
-        online: true,
-        targetUser: user,
-        lastMessage: '',
-        lastMessageTime: Date.now()
+  const handleStartEncrypted = useCallback(async () => {
+    if (!activeConversation || !activeConversation.targetUser) return
+    const targetUserId = activeConversation.targetUser.id
+    setStartingEncryption(true)
+    try {
+      const crypto = SignalCryptoManager.getInstance()
+      await crypto.init()
+      const existingSession = await crypto.loadSession(targetUserId)
+      if (!existingSession) {
+        await createConversation(targetUserId)
       }
-      setConversations((prev) => [newConv, ...prev])
-      setMessagesMap((prev) => ({ ...prev, [newConv.id]: [] }))
-      existingConv = newConv
+      setEncryptedSessions((prev) => {
+        const next = new Set(prev)
+        next.add(activeConversation.id)
+        return next
+      })
+    } catch (e) {
+      console.error('Failed to start encrypted session:', e)
+      alert('建立加密会话失败，请确保对方已注册并上传密钥')
+    } finally {
+      setStartingEncryption(false)
     }
+  }, [activeConversation, createConversation])
 
-    handleSelectConversation(existingConv.id)
-  }
+  const handleCreateGroup = useCallback((name: string, userIds: string[]) => {
+    console.log('Create group:', name, userIds)
+    alert('群聊功能开发中')
+  }, [])
 
-  const handleCreateGroup = (name: string, userIds: string[]) => {
-    const members = MockUsers.filter((u) => userIds.includes(u.id))
-    const groupMembers: Array<User & { role?: 'owner' | 'admin' | 'member' }> = [
-      { ...currentUser, role: 'owner' } as User & { role: 'owner' },
-      ...members.map((m) => ({ ...m, role: 'member' as const }))
-    ]
+  const handleInviteMember = useCallback(() => {
+    alert('邀请成员功能开发中')
+  }, [])
 
-    const newConv: ExtendedConversation = {
-      id: uuidv4(),
-      type: 'group',
-      name,
-      unreadCount: 0,
-      groupMembers,
-      lastMessage: '群已创建',
-      lastMessageTime: Date.now()
-    }
+  const handleLeaveGroup = useCallback(() => {
+    if (!confirm('确定要退出该群组吗？')) return
+    alert('退出群组功能开发中')
+  }, [])
 
-    setConversations((prev) => [newConv, ...prev])
-    setMessagesMap((prev) => ({ ...prev, [newConv.id]: [] }))
-    handleSelectConversation(newConv.id)
-  }
-
-  const handleToggleDetail = () => {
+  const handleToggleDetail = useCallback(() => {
     if (window.innerWidth <= 1024) {
       setShowDetailMobile(!showDetailMobile)
     } else {
       setDetailCollapsed(!detailCollapsed)
     }
-  }
+  }, [showDetailMobile, detailCollapsed])
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     setShowDetailMobile(false)
     setShowSidebarMobile(true)
-    setActiveConversationId(null)
-  }
+    setActiveConversation(null)
+  }, [setActiveConversation])
+
+  const handleOpenSearchModal = useCallback(async () => {
+    try {
+      const results = await userApi.search('')
+      setAllUsers(results)
+    } catch {
+      setAllUsers([])
+    }
+    setShowSearchModal(true)
+  }, [])
 
   if (!currentUser) {
     return <div>加载中...</div>
@@ -483,11 +339,11 @@ function Chat() {
       <LeftPanel visible={showSidebarMobile}>
         <Sidebar
           currentUser={currentUser}
-          conversations={conversations}
+          conversations={extendedConversations}
           activeConversationId={activeConversationId}
           onSelectConversation={handleSelectConversation}
           onCreateGroupClick={() => setShowCreateGroupModal(true)}
-          onSearchUserClick={() => setShowSearchModal(true)}
+          onSearchUserClick={handleOpenSearchModal}
         />
       </LeftPanel>
 
@@ -499,12 +355,15 @@ function Chat() {
               <ChatTitle>
                 <ChatName>
                   {activeConversation.type === 'direct'
-                    ? activeConversation.targetUser?.nickname
+                    ? activeConversation.targetUser?.nickname || activeConversation.targetUser?.phone
                     : activeConversation.name}
+                  {activeConversation.isEncrypted && (
+                    <EncryptedBadge>🔐 已加密</EncryptedBadge>
+                  )}
                 </ChatName>
                 {activeConversation.type === 'direct' && (
                   <ChatSubtitle>
-                    {activeConversation.online ? '在线' : '离线'}
+                    {isConnected ? (activeConversation.online ? '在线' : '离线') : '连接中...'}
                   </ChatSubtitle>
                 )}
               </ChatTitle>
@@ -516,7 +375,7 @@ function Chat() {
             <MessageList
               messages={activeMessages}
               currentUser={currentUser}
-              isTyping={isTyping}
+              isTyping={activeTypingUsers.size > 0}
               typingUser={null}
               onLoadMore={() => {}}
               hasMore={false}
@@ -542,6 +401,9 @@ function Chat() {
           currentUserId={currentUser.id}
           isCollapsed={detailCollapsed}
           onToggleCollapse={handleToggleDetail}
+          onStartEncrypted={startingEncryption ? undefined : handleStartEncrypted}
+          onInviteMember={handleInviteMember}
+          onLeaveGroup={handleLeaveGroup}
         />
       ) : (
         showDetailMobile && activeConversation && (
@@ -549,6 +411,9 @@ function Chat() {
             conversation={activeConversation}
             currentUserId={currentUser.id}
             isCollapsed={false}
+            onStartEncrypted={startingEncryption ? undefined : handleStartEncrypted}
+            onInviteMember={handleInviteMember}
+            onLeaveGroup={handleLeaveGroup}
           />
         )
       )}
@@ -557,14 +422,13 @@ function Chat() {
         open={showSearchModal}
         onClose={() => setShowSearchModal(false)}
         onSelectUser={handleSelectUser}
-        users={MockUsers.filter((u) => u.id !== currentUser.id)}
       />
 
       <CreateGroupModal
         open={showCreateGroupModal}
         onClose={() => setShowCreateGroupModal(false)}
         onCreate={handleCreateGroup}
-        users={MockUsers.filter((u) => u.id !== currentUser.id)}
+        users={allUsers.filter((u) => u.id !== currentUser.id)}
       />
     </ChatContainer>
   )

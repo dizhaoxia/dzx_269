@@ -36,7 +36,7 @@ async function initializeSignalCrypto(): Promise<void> {
         publicKey: signedPreKey.publicKey,
         signature: signedPreKey.signature
       },
-      oneTimePreKeys: preKeys.map((k) => ({
+      preKeys: preKeys.map((k) => ({
         keyId: k.keyId,
         publicKey: k.publicKey
       }))

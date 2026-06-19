@@ -47,6 +47,7 @@ use crate::handlers::group::{
     leave_group_handler,
     list_groups_handler,
 };
+use crate::handlers::user::{search_users_handler, get_user_handler};
 use crate::ws::connection::ConnectionManager;
 use crate::ws::handler::ws_handler;
 
@@ -134,6 +135,10 @@ fn build_router(state: AppState) -> Router {
         .route("/:id/invite", post(invite_members_handler))
         .route("/:id/leave", post(leave_group_handler));
 
+    let user_routes = Router::new()
+        .route("/search", get(search_users_handler))
+        .route("/:id", get(get_user_handler));
+
     Router::new()
         .route("/health", get(health_check))
         .route("/ws", get(ws_handler))
@@ -142,6 +147,7 @@ fn build_router(state: AppState) -> Router {
         .nest("/api/conversations", conversation_routes)
         .nest("/api/messages", message_routes)
         .nest("/api/groups", group_routes)
+        .nest("/api/users", user_routes)
         .with_state(state)
         .layer(cors)
 }

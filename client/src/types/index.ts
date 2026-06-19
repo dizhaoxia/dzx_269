@@ -1,8 +1,8 @@
 export interface User {
   id: string
   phone: string
-  nickname: string
-  avatar: string
+  nickname?: string | null
+  avatar?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -59,10 +59,10 @@ export interface KeyBundle {
     publicKey: string
     signature: string
   }
-  oneTimePreKeys: Array<{
+  oneTimePreKey?: {
     id: number
     publicKey: string
-  }>
+  }
 }
 
 export interface ApiResponse<T = unknown> {

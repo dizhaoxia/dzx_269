@@ -270,7 +270,7 @@ function CreateGroupModal({ open, onClose, onCreate, users }: CreateGroupModalPr
     if (!searchQuery.trim()) return true
     const query = searchQuery.toLowerCase()
     return (
-      user.nickname.toLowerCase().includes(query) ||
+      (user.nickname || '').toLowerCase().includes(query) ||
       user.phone.includes(query)
     )
   })
@@ -341,9 +341,9 @@ function CreateGroupModal({ open, onClose, onCreate, users }: CreateGroupModalPr
                     <Checkbox checked={selectedUserIds.includes(user.id)}>
                       {selectedUserIds.includes(user.id) && '✓'}
                     </Checkbox>
-                    <UserAvatar>{user.nickname.charAt(0).toUpperCase()}</UserAvatar>
+                    <UserAvatar>{(user.nickname || user.phone).charAt(0).toUpperCase()}</UserAvatar>
                     <UserInfo>
-                      <UserNickname>{user.nickname}</UserNickname>
+                      <UserNickname>{user.nickname || user.phone}</UserNickname>
                       <UserPhone>{user.phone}</UserPhone>
                     </UserInfo>
                   </UserItem>

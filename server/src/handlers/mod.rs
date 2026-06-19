@@ -2,8 +2,9 @@ pub mod auth;
 pub mod key;
 pub mod conversation;
 pub mod group;
+pub mod user;
 
-pub use auth::{register_handler, login_handler, me_handler};
+pub use auth::{register_handler, login_handler, me_handler, UserResponse};
 pub use key::{
     upload_keys_handler,
     get_key_bundle_handler,
@@ -24,3 +25,4 @@ pub use group::{
     leave_group_handler,
     list_groups_handler,
 };
+pub use user::{search_users_handler, get_user_handler};

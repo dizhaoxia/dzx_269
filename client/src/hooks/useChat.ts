@@ -27,13 +27,12 @@ function convertApiKeyBundleToCrypto(apiBundle: ApiKeyBundle): CryptoKeyBundle {
       publicKey: apiBundle.signedPreKey.publicKey,
       signature: apiBundle.signedPreKey.signature
     },
-    oneTimePreKey:
-      apiBundle.oneTimePreKeys && apiBundle.oneTimePreKeys.length > 0
-        ? {
-            keyId: apiBundle.oneTimePreKeys[0].id,
-            publicKey: apiBundle.oneTimePreKeys[0].publicKey
-          }
-        : undefined
+    oneTimePreKey: apiBundle.oneTimePreKey
+      ? {
+          keyId: apiBundle.oneTimePreKey.id,
+          publicKey: apiBundle.oneTimePreKey.publicKey
+        }
+      : undefined
   }
 }
 
@@ -118,7 +117,7 @@ export function useChat(): UseChatReturn {
       await dbRef.current.saveMessage(message)
       addMessage(conversationId, message)
 
-      let conv = conversations.get(conversationId)
+      let conv: Conversation | undefined = conversations.get(conversationId)
       if (!conv) {
         try {
           const otherUser = await userApi.getById(senderId)
@@ -126,7 +125,7 @@ export function useChat(): UseChatReturn {
             id: conversationId,
             type: 'direct',
             name: otherUser.nickname || otherUser.phone,
-            avatar: otherUser.avatar,
+            avatar: otherUser.avatar ?? undefined,
             lastMessage: plaintext,
             lastMessageTime: timestamp,
             unreadCount: 0,
@@ -292,7 +291,7 @@ export function useChat(): UseChatReturn {
       }
       addMessage(conversationId, message)
 
-      let conv = conversations.get(conversationId)
+      let conv: Conversation | undefined = conversations.get(conversationId)
       if (!conv) {
         try {
           const otherUser = await userApi.getById(receiverId)
@@ -300,7 +299,7 @@ export function useChat(): UseChatReturn {
             id: conversationId,
             type: 'direct',
             name: otherUser.nickname || otherUser.phone,
-            avatar: otherUser.avatar,
+            avatar: otherUser.avatar ?? undefined,
             lastMessage: plaintext,
             lastMessageTime: timestamp,
             unreadCount: 0,
@@ -374,7 +373,7 @@ export function useChat(): UseChatReturn {
         await cryptoRef.current!.processPreKeyBundle(cryptoBundle, otherUserId)
       }
 
-      let conv = conversations.get(conversationId)
+      let conv: Conversation | undefined = conversations.get(conversationId)
       if (conv) {
         return conv
       }
@@ -390,7 +389,7 @@ export function useChat(): UseChatReturn {
         id: conversationId,
         type: 'direct',
         name: otherUser ? otherUser.nickname || otherUser.phone : otherUserId,
-        avatar: otherUser?.avatar,
+        avatar: otherUser?.avatar ?? undefined,
         unreadCount: 0,
         createdAt: Date.now()
       }

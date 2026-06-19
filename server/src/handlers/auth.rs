@@ -51,7 +51,7 @@ impl From<User> for UserResponse {
     }
 }
 
-fn error_response(status: StatusCode, message: &str) -> impl IntoResponse {
+pub fn error_response(status: StatusCode, message: &str) -> impl IntoResponse {
     (
         status,
         Json(json!({ "error": message })),

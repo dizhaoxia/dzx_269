@@ -14,7 +14,7 @@ const EMOJI_LIST = [
 
 interface MessageInputProps {
   onSend: (text: string, type: 'text' | 'emoji') => void
-  onTyping?: () => void
+  onTyping?: (isTyping: boolean) => void
   disabled?: boolean
 }
 
@@ -168,8 +168,9 @@ function MessageInput({ onSend, onTyping, disabled = false }: MessageInputProps)
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current)
       }
-      onTyping()
+      onTyping(true)
       typingTimeoutRef.current = setTimeout(() => {
+        onTyping(false)
       }, 2000)
     }
   }

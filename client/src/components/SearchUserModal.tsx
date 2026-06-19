@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import styled from '@emotion/styled'
 import type { User } from '../types'
+import { userApi } from '../api'
+import { useAuthStore } from '../store/auth'
 
 interface SearchUserModalProps {
   open: boolean
   onClose: () => void
   onSelectUser: (user: User) => void
-  users: User[]
 }
 
 const ModalOverlay = styled.div`
@@ -154,24 +155,80 @@ const EmptyState = styled.div`
   font-size: 14px;
 `
 
-function SearchUserModal({ open, onClose, onSelectUser, users }: SearchUserModalProps) {
+const LoadingSpinner = styled.div`
+  padding: 40px 20px;
+  text-align: center;
+  color: #6366f1;
+  font-size: 14px;
+
+  &::after {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-left: 8px;
+    border: 2px solid #6366f1;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+`
+
+function SearchUserModal({ open, onClose, onSelectUser }: SearchUserModalProps) {
   const [searchQuery, setSearchQuery] = useState('')
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(false)
+  const currentUser = useAuthStore((s) => s.user)
+
+  const searchUsers = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setUsers([])
+      return
+    }
+    setLoading(true)
+    try {
+      const results = await userApi.search(query)
+      const filtered = currentUser
+        ? results.filter((u) => u.id !== currentUser.id)
+        : results
+      setUsers(filtered)
+    } catch (e) {
+      console.error('Search failed:', e)
+      setUsers([])
+    } finally {
+      setLoading(false)
+    }
+  }, [currentUser])
+
+  useEffect(() => {
+    if (!open) {
+      setSearchQuery('')
+      setUsers([])
+      return
+    }
+    const timer = setTimeout(() => {
+      void searchUsers(searchQuery)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [open, searchQuery, searchUsers])
 
   if (!open) return null
-
-  const filteredUsers = users.filter((user) => {
-    if (!searchQuery.trim()) return true
-    const query = searchQuery.toLowerCase()
-    return (
-      user.nickname.toLowerCase().includes(query) ||
-      user.phone.includes(query)
-    )
-  })
 
   const handleSelect = (user: User) => {
     onSelectUser(user)
     setSearchQuery('')
+    setUsers([])
     onClose()
+  }
+
+  const renderAvatar = (user: User) => {
+    const display = user.nickname?.charAt(0)?.toUpperCase() || user.phone.charAt(0)
+    return <UserAvatar>{display}</UserAvatar>
   }
 
   return (
@@ -193,14 +250,18 @@ function SearchUserModal({ open, onClose, onSelectUser, users }: SearchUserModal
         </SearchWrapper>
 
         <UserList>
-          {filteredUsers.length === 0 ? (
+          {loading ? (
+            <LoadingSpinner>搜索中</LoadingSpinner>
+          ) : !searchQuery.trim() ? (
+            <EmptyState>输入关键词开始搜索</EmptyState>
+          ) : users.length === 0 ? (
             <EmptyState>未找到用户</EmptyState>
           ) : (
-            filteredUsers.map((user) => (
+            users.map((user) => (
               <UserItem key={user.id} onClick={() => handleSelect(user)}>
-                <UserAvatar>{user.nickname.charAt(0).toUpperCase()}</UserAvatar>
+                {renderAvatar(user)}
                 <UserInfo>
-                  <UserNickname>{user.nickname}</UserNickname>
+                  <UserNickname>{user.nickname || user.phone}</UserNickname>
                   <UserPhone>{user.phone}</UserPhone>
                 </UserInfo>
               </UserItem>

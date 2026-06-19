@@ -201,12 +201,12 @@ pub async fn get_user_key_bundle(pool: &PgPool, user_id: Uuid) -> Result<KeyBund
     Ok(KeyBundle {
         identity_key: identity_key.public_key,
         signed_pre_key: SignedPreKeyBundle {
-            key_id: signed_pre_key.key_id,
+            id: signed_pre_key.key_id,
             public_key: signed_pre_key.public_key,
             signature: signed_pre_key.signature,
         },
         one_time_pre_key: one_time_pre_key.map(|k| PreKeyBundle {
-            key_id: k.key_id,
+            id: k.key_id,
             public_key: k.public_key,
         }),
     })

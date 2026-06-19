@@ -54,21 +54,26 @@ pub struct UploadKeysRequest {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SignedPreKeyBundle {
-    pub key_id: i32,
+    pub id: i32,
+    #[serde(rename = "publicKey")]
     pub public_key: String,
     pub signature: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PreKeyBundle {
-    pub key_id: i32,
+    pub id: i32,
+    #[serde(rename = "publicKey")]
     pub public_key: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct KeyBundle {
+    #[serde(rename = "identityKey")]
     pub identity_key: String,
+    #[serde(rename = "signedPreKey")]
     pub signed_pre_key: SignedPreKeyBundle,
+    #[serde(rename = "oneTimePreKey")]
     pub one_time_pre_key: Option<PreKeyBundle>,
 }
 
