@@ -18,16 +18,9 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem('auth-storage')
+    const token = useAuthStore.getState().token
     if (token) {
-      try {
-        const parsed = JSON.parse(token)
-        if (parsed.state?.token) {
-          config.headers.Authorization = `Bearer ${parsed.state.token}`
-        }
-      } catch {
-        // ignore parse error
-      }
+      config.headers.Authorization = `Bearer ${token}`
     }
     return config
   },
@@ -87,7 +80,9 @@ export const keyApi = {
       }))
     }),
   getBundle: (userId: string): Promise<KeyBundle> =>
-    apiClient.get(`/keys/bundle/${userId}`) as Promise<KeyBundle>
+    apiClient.get(`/keys/bundle/${userId}`) as Promise<KeyBundle>,
+  getPreKeyCount: (): Promise<{ count: number }> =>
+    apiClient.get('/keys/pre-key-count') as Promise<{ count: number }>
 }
 
 export const messageApi = {

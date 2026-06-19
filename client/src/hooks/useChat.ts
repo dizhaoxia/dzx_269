@@ -69,12 +69,12 @@ export function useChat(): UseChatReturn {
   const ensureInitialized = useCallback(async (): Promise<void> => {
     if (!dbRef.current) {
       dbRef.current = DatabaseManager.getInstance()
-      await dbRef.current.init()
     }
+    await dbRef.current.init()
     if (!cryptoRef.current) {
       cryptoRef.current = SignalCryptoManager.getInstance()
-      await cryptoRef.current.init()
     }
+    await cryptoRef.current.init()
     if (!cryptoInitialized) {
       await initializeCrypto()
     }

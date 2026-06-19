@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { User } from '../types'
 import { SignalCryptoManager } from '../crypto'
+import type { IdentityKeyPair } from '../crypto'
 import { DatabaseManager } from '../db'
 import { keyApi } from '../api'
 
@@ -16,6 +17,26 @@ interface AuthState {
   initializeCrypto: () => Promise<void>
 }
 
+async function uploadKeyBundle(
+  crypto: SignalCryptoManager,
+  identityKeyPair: IdentityKeyPair
+): Promise<void> {
+  const signedPreKey = await crypto.generateSignedPreKey(identityKeyPair, 1)
+  const preKeys = await crypto.generatePreKeys(1, 100)
+  await keyApi.uploadKeys({
+    identityKey: identityKeyPair.publicKey,
+    signedPreKey: {
+      keyId: signedPreKey.keyId,
+      publicKey: signedPreKey.publicKey,
+      signature: signedPreKey.signature
+    },
+    preKeys: preKeys.map((k) => ({
+      keyId: k.keyId,
+      publicKey: k.publicKey
+    }))
+  })
+}
+
 async function initializeSignalCrypto(): Promise<void> {
   const db = DatabaseManager.getInstance()
   await db.init()
@@ -24,23 +45,22 @@ async function initializeSignalCrypto(): Promise<void> {
   await crypto.init()
 
   const existingKey = await db.loadIdentityKey()
-  if (!existingKey) {
-    const identityKeyPair = await crypto.generateIdentityKeyPair()
-    const signedPreKey = await crypto.generateSignedPreKey(identityKeyPair, 1)
-    const preKeys = await crypto.generatePreKeys(1, 100)
-
-    await keyApi.uploadKeys({
-      identityKey: identityKeyPair.publicKey,
-      signedPreKey: {
-        keyId: signedPreKey.keyId,
-        publicKey: signedPreKey.publicKey,
-        signature: signedPreKey.signature
-      },
-      preKeys: preKeys.map((k) => ({
-        keyId: k.keyId,
-        publicKey: k.publicKey
-      }))
+  if (existingKey) {
+    try {
+      const result = await keyApi.getPreKeyCount()
+      if (result.count > 0) {
+        return
+      }
+    } catch {
+      // 如果检查失败，继续尝试上传，确保服务端有密钥
+    }
+    await uploadKeyBundle(crypto, {
+      publicKey: existingKey.publicKey,
+      privateKey: existingKey.privateKey
     })
+  } else {
+    const identityKeyPair = await crypto.generateIdentityKeyPair()
+    await uploadKeyBundle(crypto, identityKeyPair)
   }
 }
 
@@ -64,6 +84,7 @@ export const useAuthStore = create<AuthState>()(
           set({ cryptoInitialized: true })
         } catch (e) {
           console.error('Failed to initialize crypto:', e)
+          throw e
         }
       }
     }),
@@ -73,8 +94,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         token: state.token,
         user: state.user,
-        isAuthenticated: state.isAuthenticated,
-        cryptoInitialized: state.cryptoInitialized
+        isAuthenticated: state.isAuthenticated
       })
     }
   )
