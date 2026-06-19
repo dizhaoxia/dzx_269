@@ -17,6 +17,7 @@ use crate::services::auth::Claims;
 use crate::services::message::{save_message, update_message_status};
 use crate::ws::connection::ConnectionManager;
 use crate::ws::message::{IncomingMessage, OutgoingMessage, WebSocketMessage};
+use std::sync::Arc;
 
 pub async fn ws_handler(
     State(state): State<AppState>,
@@ -29,7 +30,7 @@ pub async fn ws_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, user_id, cm, state))
 }
 
-async fn handle_socket(socket: WebSocket, user_id: Uuid, cm: ConnectionManager, state: AppState) {
+async fn handle_socket(socket: WebSocket, user_id: Uuid, cm: Arc<ConnectionManager>, state: AppState) {
     let (sender, receiver) = socket.split();
 
     cm.add_connection(user_id, sender).await;
@@ -54,7 +55,7 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, cm: ConnectionManager, 
 async fn handle_receiver(
     mut receiver: SplitStream<WebSocket>,
     user_id: Uuid,
-    cm: ConnectionManager,
+    cm: Arc<ConnectionManager>,
     state: AppState,
 ) {
     while let Some(msg_result) = receiver.next().await {

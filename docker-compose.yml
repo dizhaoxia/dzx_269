@@ -1,15 +1,13 @@
-version: "3.9"
-
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:15-alpine
     container_name: e2ee-im-postgres
     environment:
       POSTGRES_USER: e2ee_im
       POSTGRES_PASSWORD: e2ee_im_secret
       POSTGRES_DB: e2ee_im
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +20,7 @@ services:
     image: redis:7-alpine
     container_name: e2ee-im-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:

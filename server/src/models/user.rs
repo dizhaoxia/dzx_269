@@ -17,7 +17,7 @@ pub struct User {
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct CreateUser {
-    #[validate(phone)]
+    #[validate(length(min = 11, max = 20))]
     pub phone: String,
     #[validate(length(min = 8))]
     pub password: String,

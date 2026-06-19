@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use futures::sink::SplitSink;
+use futures::stream::SplitSink;
 use futures::SinkExt;
 use redis::AsyncCommands;
 use serde_json;

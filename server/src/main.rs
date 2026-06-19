@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use axum::{
     async_trait,
-    extract::FromRequestParts,
+    extract::{FromRequestParts, FromRef},
     http::{request::Parts, StatusCode, header::AUTHORIZATION, Method},
     routing::get,
     Json,

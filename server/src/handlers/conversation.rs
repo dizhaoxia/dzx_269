@@ -11,6 +11,7 @@ use crate::AppState;
 use crate::models::{Conversation, Message, MessageType};
 use crate::services::auth::Claims;
 use crate::services::conversation as conversation_service;
+use crate::services::message as message_service;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateDirectConversationPayload {
@@ -108,7 +109,7 @@ pub async fn list_conversations_handler(
     State(state): State<AppState>,
     claims: Claims,
 ) -> impl IntoResponse {
-    match conversation_service::list_conversations(&state.db.pg, claims.user_id).await {
+    match conversation_service::get_user_conversations(&state.db.pg, claims.user_id).await {
         Ok(conversations) => {
             let conv_resp: Vec<ConversationResponse> = conversations
                 .into_iter()
@@ -129,7 +130,14 @@ pub async fn create_direct_conversation_handler(
     claims: Claims,
     Json(payload): Json<CreateDirectConversationPayload>,
 ) -> impl IntoResponse {
-    match conversation_service::create_direct_conversation(
+    if claims.user_id == payload.user_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "Cannot create conversation with yourself",
+        )
+        .into_response();
+    }
+    match conversation_service::get_or_create_direct(
         &state.db.pg,
         claims.user_id,
         payload.user_id,
@@ -161,14 +169,10 @@ pub async fn get_messages_handler(
     Path(conversation_id): Path<Uuid>,
     Query(query): Query<GetMessagesQuery>,
 ) -> impl IntoResponse {
-    let is_member = match conversation_service::is_conversation_member(
-        &state.db.pg,
-        conversation_id,
-        claims.user_id,
-    )
-    .await
+    let is_member = match conversation_service::get_user_conversations(&state.db.pg, claims.user_id)
+        .await
     {
-        Ok(b) => b,
+        Ok(convs) => convs.iter().any(|c| c.id == conversation_id),
         Err(e) => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -186,7 +190,7 @@ pub async fn get_messages_handler(
     let limit = query.limit.unwrap_or(50).min(100);
     let offset = query.offset.unwrap_or(0);
 
-    match conversation_service::get_messages(&state.db.pg, conversation_id, limit, offset).await {
+    match message_service::get_conversation_messages(&state.db.pg, conversation_id, limit, offset).await {
         Ok(messages) => {
             let msg_resp: Vec<MessageResponse> = messages
                 .into_iter()
@@ -211,7 +215,7 @@ pub async fn send_message_handler(
         return error_response(StatusCode::BAD_REQUEST, "Ciphertext is required").into_response();
     }
 
-    match conversation_service::send_message(
+    match message_service::save_message(
         &state.db.pg,
         payload.conversation_id,
         claims.user_id,
@@ -246,7 +250,7 @@ pub async fn mark_read_handler(
     claims: Claims,
     Path(conversation_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match conversation_service::mark_read(&state.db.pg, conversation_id, claims.user_id).await {
+    match message_service::mark_as_read(&state.db.pg, conversation_id, claims.user_id).await {
         Ok(()) => (StatusCode::OK, Json(json!({ "status": "ok" }))).into_response(),
         Err(e) => {
             let msg = e.to_string();
